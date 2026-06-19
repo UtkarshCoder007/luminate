@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: luminate
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: luminate-consumer-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.luminate.*"
+
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URI:http://localhost:9200}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8080
+
+# Suppress Netty unsafe memory warning
+logging:
+  level:
+    io.netty.util.internal.PlatformDependent: ERROR
+    org.springframework.boot.devtools: WARN
+
+management:
+  health:
+    elasticsearch:
+      enabled: false
+  endpoint:
+    health:
+      show-details: always
+
+luminate:
+  kafka:
+    topics:
+      incoming-logs: incoming-logs
+      dead-letter: incoming-logs-dlt
+  rate-limit:
+    requests-per-minute: ${RATE_LIMIT_PER_MINUTE:1000}
+  lifecycle:
+    retention-days: ${LOG_RETENTION_DAYS:15}
+  alert:
+    webhook-url: ${ALERT_WEBHOOK_URL:}
+    zscore-threshold: 3.0
