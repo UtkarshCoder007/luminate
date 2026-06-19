@@ -1,4 +1,4 @@
-package com.luminate.luminate;
+package com.luminate;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
