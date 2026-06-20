@@ -1,5 +1,7 @@
 package com.luminate.kafka.consumer;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
 import com.luminate.ingestion.dto.LogPayload;
 import com.luminate.model.LogDocument;
 import com.luminate.config.IndexNameProvider;
@@ -7,13 +9,13 @@ import com.luminate.kafka.dlt.DeadLetterTopicHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.IndexOperations;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
+import java.io.StringReader;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,10 +25,28 @@ import java.util.UUID;
 public class LogEventConsumer {
 
     private final ElasticsearchOperations elasticsearchOperations;
+    private final ElasticsearchClient elasticsearchClient;
     private final IndexNameProvider indexNameProvider;
     private final DeadLetterTopicHandler deadLetterTopicHandler;
 
     private static final int MAX_RETRIES = 3;
+
+    // Explicit mapping — keyword for exact match fields, text for full-text search fields
+    private static final String INDEX_MAPPING = """
+        {
+          "mappings": {
+            "properties": {
+              "id":          { "type": "keyword" },
+              "timestamp":   { "type": "date", "format": "epoch_millis||strict_date_optional_time" },
+              "serviceName": { "type": "keyword" },
+              "logLevel":    { "type": "keyword" },
+              "traceId":     { "type": "keyword" },
+              "message":     { "type": "text", "analyzer": "standard" },
+              "stackTrace":  { "type": "text", "analyzer": "standard" }
+            }
+          }
+        }
+        """;
 
     @KafkaListener(
             topics = "${luminate.kafka.topics.incoming-logs}",
@@ -48,11 +68,6 @@ public class LogEventConsumer {
         indexWithRetry(documents, indexName, logs);
     }
 
-    /**
-     * Manual retry with exponential backoff.
-     * Retries 3 times: 1s, 2s, 4s delays.
-     * Routes to DLT after all retries are exhausted.
-     */
     private void indexWithRetry(List<LogDocument> documents,
                                 String indexName,
                                 List<LogPayload> originalPayloads) {
@@ -72,7 +87,7 @@ public class LogEventConsumer {
                 if (attempt < MAX_RETRIES) {
                     try {
                         Thread.sleep(delay);
-                        delay *= 2; // exponential backoff
+                        delay *= 2;
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -87,11 +102,17 @@ public class LogEventConsumer {
     }
 
     private void ensureIndexExists(String indexName) {
-        IndexCoordinates coordinates = IndexCoordinates.of(indexName);
-        IndexOperations indexOps = elasticsearchOperations.indexOps(coordinates);
-        if (!indexOps.exists()) {
-            indexOps.create();
-            log.info("Created new index: {}", indexName);
+        try {
+            boolean exists = elasticsearchClient.indices()
+                    .exists(e -> e.index(indexName))
+                    .value();
+            if (!exists) {
+                // Template will apply correct mapping automatically
+                elasticsearchClient.indices().create(c -> c.index(indexName));
+                log.info("Created index: {}", indexName);
+            }
+        } catch (Exception e) {
+            log.error("Failed to ensure index exists: {}", indexName, e);
         }
     }
 
