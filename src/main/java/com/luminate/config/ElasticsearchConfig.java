@@ -40,4 +40,8 @@ public class ElasticsearchConfig extends ElasticsearchConfiguration {
 
         return new co.elastic.clients.elasticsearch.ElasticsearchClient(transport);
     }
+    @Bean
+    public org.springframework.web.reactive.function.client.WebClient.Builder webClientBuilder() {
+        return org.springframework.web.reactive.function.client.WebClient.builder();
+    }
 }
