@@ -28,6 +28,7 @@ public class LogEventConsumer {
     private final ElasticsearchClient elasticsearchClient;
     private final IndexNameProvider indexNameProvider;
     private final DeadLetterTopicHandler deadLetterTopicHandler;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private static final int MAX_RETRIES = 3;
 
@@ -77,7 +78,11 @@ public class LogEventConsumer {
         while (attempt < MAX_RETRIES) {
             try {
                 elasticsearchOperations.save(documents, IndexCoordinates.of(indexName));
+
                 log.info("Indexed {} documents into: {}", documents.size(), indexName);
+
+                // Notify SSE stream that new logs are available
+                eventPublisher.publishEvent(new com.luminate.search.event.LogsIndexedEvent(this, documents));
                 return;
             } catch (Exception e) {
                 attempt++;
